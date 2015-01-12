@@ -286,7 +286,7 @@ class RailsTranslateRoutes
             conditions[k] = v unless k == :request_method
           end
         end
-        defaults = route.defaults.merge LOCALE_PARAM_KEY => locale.dup
+        defaults = route.defaults
       else
         conditions = { :path_info => translate_path(route.path, locale) }
         conditions[:request_method] = parse_request_methods route.conditions[:request_method] if route.conditions.has_key? :request_method
