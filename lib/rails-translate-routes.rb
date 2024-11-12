@@ -218,15 +218,6 @@ class RailsTranslateRoutes
           end
         end
       end
-
-      original_named_routes.each_key do |route_name|
-        route_set.named_routes.helpers.concat add_untranslated_helpers_to_controllers_and_views(route_name)
-      end
-
-      if root_route = original_named_routes[:root]
-        add_root_route root_route, route_set
-      end
-
     end
 
     # Add unmodified root route to route_set
@@ -235,6 +226,7 @@ class RailsTranslateRoutes
         if Rails.version >= '3.2'
           conditions = { :path_info => root_route.path.spec.to_s }
           conditions[:request_method] = parse_request_methods root_route.verb if root_route.verb != //
+          conditions[:parsed_path_info] = path_ast(conditions[:path_info])
           route_set.add_route root_route.app, conditions, root_route.requirements, root_route.defaults, root_route.name
         else
           root_route.conditions[:path_info] = root_route.conditions[:path_info].dup
@@ -243,6 +235,11 @@ class RailsTranslateRoutes
           route_set.routes << root_route
         end
       end
+    end
+
+    def path_ast(path)
+      parser = ActionDispatch::Journey::Parser.new
+      parser.parse path
     end
 
     # Add standard route helpers for default locale e.g.
@@ -280,6 +277,7 @@ class RailsTranslateRoutes
     def translate_route route, locale
       if Rails.version >= '3.2'
         conditions = { :path_info => translate_path(route.path.spec.to_s, locale) }
+        conditions[:parsed_path_info] = path_ast(conditions[:path_info])
         conditions[:request_method] = parse_request_methods route.verb if route.verb != //
         if route.constraints
           route.constraints.each do |k,v|
@@ -303,17 +301,16 @@ class RailsTranslateRoutes
     def untranslated_route route
       conditions = {}
       if Rails.version >= '3.2'
+        conditions = route.conditions
         conditions[:path_info] = route.path.spec.to_s
+        conditions[:parsed_path_info] = path_ast(conditions[:path_info])
         conditions[:request_method] = parse_request_methods route.verb if route.verb != //
-        conditions[:subdomain] = route.constraints[:subdomain] if route.constraints
       else
         conditions[:path_info] = route.path
         conditions[:request_method] = parse_request_methods route.conditions[:request_method] if route.conditions.has_key? :request_method
       end
-      requirements = route.requirements
-      defaults = route.defaults
 
-      [route.app, conditions, requirements, defaults]
+      [route.app, conditions, route.requirements, route.defaults, route.name]
     end
 
     # Add prefix for all non-default locales
@@ -358,7 +355,6 @@ class RailsTranslateRoutes
     private
     def reset_route_set route_set
       route_set.clear!
-      remove_all_methods_in route_set.named_routes.module
     end
 
     def remove_all_methods_in mod
@@ -368,8 +364,14 @@ class RailsTranslateRoutes
     end
 
     # expects methods regexp to be in a format: /^GET$/ or /^GET|POST$/ and returns array ["GET", "POST"]
-    def parse_request_methods methods_regexp
-      methods_regexp.source.gsub(/\^([a-zA-Z\|]+)\$/, "\\1").split("|")
+    def parse_request_methods request_methods
+      if request_methods.is_a?(Regexp)
+        request_methods.source.gsub(/\^([a-zA-Z\|]+)\$/, "\\1").split("|")
+      elsif request_methods.is_a?(Array)
+        request_methods
+      else
+        request_methods
+      end
     end
   end
   include Translator
